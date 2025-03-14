@@ -266,6 +266,15 @@
             padding: 15px;
             margin-bottom: 15px;
             border: 1px solid var(--border-color);
+            border-left: 4px solid transparent;
+        }
+        
+        .step.step-success {
+            border-left-color: var(--success-color);
+        }
+        
+        .step.step-error {
+            border-left-color: var(--error-color);
         }
         
         .step-header {
@@ -357,6 +366,21 @@
             font-size: 14px;
         }
         
+        .validation-item {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+        }
+        
+        .validation-item.success {
+            border-left: 3px solid var(--success-color);
+        }
+        
+        .validation-item.error {
+            border-left: 3px solid var(--error-color);
+        }
+        
         footer {
             text-align: center;
             margin-top: 50px;
@@ -437,7 +461,7 @@
         
         .tooltip .tooltiptext {
             visibility: hidden;
-            width: 250px;
+            width: 350px;
             background-color: var(--secondary-bg);
             color: var(--text-primary);
             text-align: left;
@@ -467,6 +491,22 @@
             font-family: 'Consolas', 'Monaco', monospace;
             margin: 5px 0;
         }
+        
+        .method-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .method-tag {
+            background-color: var(--accent-color);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -495,11 +535,22 @@
                                 Multiple commands can be separated by a blank line.
                                 <div class="tooltip">?
                                     <span class="tooltiptext">
-                                        Example formats:<br>
+                                        <strong>Supported HTTP Methods:</strong>
+                                        <div class="method-list">
+                                            <span class="method-tag">GET</span>
+                                            <span class="method-tag">POST</span>
+                                            <span class="method-tag">PUT</span>
+                                            <span class="method-tag">PATCH</span>
+                                            <span class="method-tag">DELETE</span>
+                                        </div>
+                                        <strong>Example formats:</strong><br>
                                         <div class="code-example">curl -X GET 'https://api.example.com/users'</div>
                                         <div class="code-example">curl -X POST 'https://api.example.com/login' \
 -H 'Content-Type: application/json' \
 -d '{"username": "test", "password": "pass"}'</div>
+                                        <div class="code-example">curl -X PUT 'https://api.example.com/users/1' \
+-H 'Content-Type: application/json' \
+-d '{"name": "John", "job": "Developer"}'</div>
                                     </span>
                                 </div>
                             </div>
@@ -509,7 +560,19 @@
                     <div class="tab-content" id="instructions-tab">
                         <div class="form-group">
                             <label for="instructions-input">Describe what you want to test:</label>
-                            <textarea id="instructions-input" placeholder="First login to the API with the credentials, then retrieve the user profile using the token from the login response. Check if the response contains the user's email."></textarea>
+                            <textarea id="instructions-input" placeholder="Test the API endpoints. You can customize test data with instructions like: 'Test with different user names' or 'Validate that response contains user ID'."></textarea>
+                            <div class="curl-help">
+                                AI will create a test plan based on your instructions
+                                <div class="tooltip">?
+                                    <span class="tooltiptext">
+                                        <strong>Example instructions:</strong><br>
+                                        - "First register a user then check if the response contains a token"<br>
+                                        - "Test with different user data: change the name to John Doe"<br>
+                                        - "Assert that response contains 'success: true'"<br>
+                                        - "Validate that the status code is 201 for creation"
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
@@ -532,6 +595,13 @@
                             <span>Auto-extract tokens</span>
                             <label class="toggle-switch">
                                 <input type="checkbox" id="token-toggle" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="settings-row">
+                            <span>Continue on failure</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="continue-on-failure-toggle" checked>
                                 <span class="slider"></span>
                             </label>
                         </div>
@@ -665,6 +735,7 @@
                 const sequential = document.getElementById('sequential-toggle').checked;
                 const validation = document.getElementById('validation-toggle').checked;
                 const extractTokens = document.getElementById('token-toggle').checked;
+                const continueOnFailure = document.getElementById('continue-on-failure-toggle').checked;
                 
                 if (!curlCommands) {
                     alert('Please enter at least one CURL command.');
@@ -697,7 +768,8 @@
                     settings: {
                         sequential: sequential,
                         validation: validation,
-                        extract_tokens: extractTokens
+                        extract_tokens: extractTokens,
+                        continue_on_failure: continueOnFailure
                     }
                 };
                 
