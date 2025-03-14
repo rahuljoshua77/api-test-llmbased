@@ -190,7 +190,7 @@ class GeminiClient:
         genai.configure(api_key=api_key)
         # Try different models in case some aren't available
         try:
-            self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            self.model = genai.GenerativeModel('gemini-pro')
         except:
             try:
                 self.model = genai.GenerativeModel('gemini-1.5-pro')
@@ -323,7 +323,7 @@ class GeminiClient:
                 # Find JSON content - improved regex pattern to match different code block formats
                 json_match = re.search(r'``````', response_text, re.DOTALL)
                 if json_match:
-                    json_str = json_match.group(1)
+                    json_str = json_match.group(2)
                 else:
                     # Just use the whole response
                     json_str = response_text
@@ -516,7 +516,7 @@ class APITester:
                 results.append(result_step)
                 
                 # Always continue to the next step, even if this one failed
-                # (The break is removed to ensure all steps are executed)
+                # (The break statement is removed to ensure all steps are executed)
             
             except Exception as e:
                 self.log(f"Error executing step {i+1}: {str(e)}")
@@ -587,31 +587,47 @@ class APITester:
                 param_strs = [f"{k}={v}" for k, v in params.items()]
                 result['url'] = f"{base_url}?{'&'.join(param_strs)}"
         
-        # Modify data
+        # Modify data - with improved error handling
         if 'data' in modifications and modifications['data']:
             data = result.get('data', {})
-            if isinstance(data, dict) and isinstance(modifications['data'], dict):
-                for k, v in modifications['data'].items():
-                    # Replace variables
-                    if isinstance(v, str):
-                        v = self.replace_variables(v)
-                    data[k] = v
-                result['data'] = data
-            elif isinstance(modifications['data'], dict):
-                # Convert string data to dict if modifications are a dict
-                try:
-                    data_dict = json.loads(data) if isinstance(data, str) else {}
+            
+            try:
+                # If both are dictionaries, merge them
+                if isinstance(data, dict) and isinstance(modifications['data'], dict):
                     for k, v in modifications['data'].items():
                         # Replace variables
                         if isinstance(v, str):
                             v = self.replace_variables(v)
-                        data_dict[k] = v
-                    result['data'] = data_dict
-                except:
-                    self.log("Warning: Could not apply data modifications")
-            else:
-                # Replace the entire data
-                result['data'] = self.replace_variables(modifications['data']) if isinstance(modifications['data'], str) else modifications['data']
+                        data[k] = v
+                    result['data'] = data
+                    
+                # If modifications is a dictionary but original data is a string
+                elif isinstance(modifications['data'], dict):
+                    try:
+                        # Try to parse original data as JSON string
+                        data_dict = json.loads(data) if isinstance(data, str) else {}
+                        for k, v in modifications['data'].items():
+                            if isinstance(v, str):
+                                v = self.replace_variables(v)
+                            data_dict[k] = v
+                        result['data'] = data_dict
+                    except json.JSONDecodeError as e:
+                        # Create a new dictionary with the modifications
+                        self.log(f"Original data was not valid JSON, creating new data object: {e}")
+                        result['data'] = {k: self.replace_variables(v) if isinstance(v, str) else v 
+                                          for k, v in modifications['data'].items()}
+                
+                # If modifications is a string or other type, replace the entire data
+                else:
+                    if isinstance(modifications['data'], str):
+                        result['data'] = self.replace_variables(modifications['data'])
+                    else:
+                        result['data'] = modifications['data']
+                    
+            except Exception as e:
+                self.log(f"Error applying data modifications: {str(e)}")
+                # Instead of silently failing, preserve the original data
+                result['data'] = data
         
         return result
     
@@ -624,6 +640,9 @@ class APITester:
         for var_name, value in self.extracted_data.items():
             if isinstance(value, str):
                 text = text.replace(f"${{{var_name}}}", value)
+            elif value is not None:
+                # Handle non-string values by converting them to string
+                text = text.replace(f"${{{var_name}}}", str(value))
         
         return text
     
@@ -631,39 +650,72 @@ class APITester:
         """Execute an HTTP request."""
         method = command['method'].upper()
         url = command['url']
-        headers = command.get('headers', {})
+        headers = command.get('headers', {}).copy()  # Create a copy to avoid modifying original
         data = command.get('data')
         
-        data_str = json.dumps(data) if isinstance(data, dict) else data
-        self.log(f"Sending {method} request to {url}")
+        self.log(f"Preparing {method} request to {url}")
+        
+        # Validate and prepare data based on content type
+        if data is not None:
+            if isinstance(data, dict):
+                # Set JSON content type if not specified
+                if not any(k.lower() == 'content-type' for k in headers):
+                    headers['Content-Type'] = 'application/json'
+                    
+                # Verify we have a valid dictionary before serializing
+                try:
+                    data_str = json.dumps(data)
+                    self.log(f"Data (JSON): {data_str[:200]}..." if len(data_str) > 200 else f"Data (JSON): {data_str}")
+                except (TypeError, ValueError) as e:
+                    self.log(f"Warning: JSON serialization failed: {e}")
+                    # Handle the error case by converting problematic values to strings
+                    sanitized_data = {}
+                    for k, v in data.items():
+                        try:
+                            json.dumps({k: v})  # Test if this key-value pair is serializable
+                            sanitized_data[k] = v
+                        except:
+                            sanitized_data[k] = str(v)
+                    data = sanitized_data
+                    data_str = json.dumps(sanitized_data)
+                    self.log(f"Data (sanitized JSON): {data_str[:200]}..." if len(data_str) > 200 else f"Data (sanitized JSON): {data_str}")
+            elif isinstance(data, str):
+                # If data is a string, log it directly
+                self.log(f"Data (String): {data[:200]}..." if len(data) > 200 else f"Data (String): {data}")
+                # Check if it looks like JSON but content-type isn't set
+                if data.strip().startswith('{') and not any(k.lower() == 'content-type' for k in headers):
+                    headers['Content-Type'] = 'application/json'
+            else:
+                # For other data types, convert to string
+                self.log(f"Data (Other type: {type(data)}): {str(data)[:200]}..." if len(str(data)) > 200 else f"Data (Other type: {type(data)}): {str(data)}")
+        
+        # Log headers
         if headers:
             self.log(f"Headers: {json.dumps(headers)}")
-        if data:
-            self.log(f"Data: {data_str}")
         
-        # Convert dict data to JSON string with proper content type
-        if isinstance(data, dict):
-            if 'Content-Type' not in headers:
-                headers['Content-Type'] = 'application/json'
-            data = json.dumps(data)
-        
+        # Make the request with proper error handling
         try:
+            # Convert dict data to JSON string with proper content type
+            if isinstance(data, dict) and any(k.lower() == 'content-type' and 'json' in headers[k].lower() for k in headers):
+                data = json.dumps(data)
+            
             response = self.session.request(
                 method=method,
                 url=url,
                 headers=headers,
-                data=data
+                data=data,
+                timeout=30  # Add a reasonable timeout
             )
             
             self.log(f"Received response: HTTP {response.status_code}")
             try:
                 response_json = response.json()
-                self.log(f"Response body: {json.dumps(response_json, indent=2)}")
+                self.log(f"Response body (JSON): {json.dumps(response_json, indent=2)}")
             except:
-                self.log(f"Response body: {response.text[:200]}...")
+                self.log(f"Response body (not JSON): {response.text[:200]}..." if len(response.text) > 200 else f"Response body: {response.text}")
             
             return response
-        
+            
         except requests.RequestException as e:
             self.log(f"Request failed: {str(e)}")
             raise
@@ -738,6 +790,7 @@ class APITester:
                         success = False
                         message = "Empty validation text is not allowed"
                         actual = "Empty validation"
+                        self.log("WARNING: Empty validation string detected, this will always match any response")
                     else:
                         response_body = response.text
                         success = text in response_body
