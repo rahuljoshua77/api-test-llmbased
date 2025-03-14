@@ -190,7 +190,7 @@ class GeminiClient:
         genai.configure(api_key=api_key)
         # Try different models in case some aren't available
         try:
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
         except:
             try:
                 self.model = genai.GenerativeModel('gemini-1.5-pro')
