@@ -174,7 +174,7 @@ class GeminiClient:
             try:
                 self.model = genai.GenerativeModel('gemini-1.5-pro')
             except:
-                self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
+                self.model = genai.GenerativeModel('gemini-pro')
     
     def process_instructions(self, parsed_commands: List[Dict[str, Any]], 
                              instructions: str, 
@@ -489,10 +489,10 @@ class APITester:
                 
                 results.append(result_step)
                 
-                # If step failed and we're in sequential mode, stop execution
-                if not success and test_plan.get('sequential', True):
-                    self.log(f"Step {i+1} failed, stopping execution.")
-                    break
+                # Modified condition to continue even on failure
+                # if not success and test_plan.get('sequential', True):
+                #     self.log(f"Step {i+1} failed, stopping execution.")
+                #     break
             
             except Exception as e:
                 self.log(f"Error executing step {i+1}: {str(e)}")
@@ -505,7 +505,8 @@ class APITester:
                     "response": "N/A",
                     "notes": "Failed to execute step"
                 })
-                break
+                # Continue to next step instead of breaking
+                # break
         
         # Calculate execution time
         end_time = time.time()
