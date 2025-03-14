@@ -174,14 +174,6 @@ class GeminiClient:
                              settings: Dict[str, bool]) -> Dict[str, Any]:
         """
         Process user instructions with Gemini API to create a test plan.
-        
-        Args:
-            parsed_commands: List of parsed curl commands
-            instructions: Natural language instructions
-            settings: User settings
-            
-        Returns:
-            Test plan structure
         """
         try:
             # Format commands for prompt
@@ -207,7 +199,7 @@ class GeminiClient:
             
             commands_text = "\n".join(formatted_commands)
             
-            # Create prompt for Gemini
+            # Create improved prompt for Gemini
             prompt = f"""
             You are an API testing assistant. I'll provide you with a list of API commands and natural language instructions.
             Your task is to create a detailed test plan with steps that can be executed in sequence.
@@ -223,12 +215,19 @@ class GeminiClient:
             - Validate responses: {settings.get('validation', True)}
             - Auto-extract tokens: {settings.get('extract_tokens', True)}
 
+            IMPORTANT: Analyze the user instructions carefully and extract specific validation criteria.
+            If the user wants to check if something is contained in a response, make sure to include the EXACT text to search for.
+            For example, if the instruction is "assert 'description': 'ayam' in contain the response", 
+            create a 'contains' validation with text="\"description\": \"ayam\"".
+
             Please create a structured test plan with the following information:
             1. List of steps to execute
             2. For each step:
+               - A descriptive name that reflects what is being tested
+               - The original prompt or assertion being tested (copied from user instructions)
                - Which command to use
                - Any modifications needed (like adding tokens from previous responses)
-               - What to validate in the response
+               - What to validate in the response (be specific about what to check for)
                - How to extract data for subsequent steps (if needed)
 
             Respond with a JSON object with the following structure:
@@ -238,11 +237,11 @@ class GeminiClient:
                   {{
                     "name": "Step name",
                     "prompt": "Original assertion being tested",
-                    "command_index": 0,  // index in the provided commands list
+                    "command_index": 0,
                     "modifications": {{
-                      "headers": {{}},  // headers to add/replace
-                      "url_params": {{}},  // URL parameters to add
-                      "data": {{}}  // data fields to add/replace
+                      "headers": {{}},
+                      "url_params": {{}},
+                      "data": {{}}
                     }},
                     "validation": [
                       {{
@@ -250,9 +249,8 @@ class GeminiClient:
                         "expected": 200
                       }},
                       {{
-                        "type": "json_path",
-                        "path": "$.field",
-                        "expected": "value"
+                        "type": "contains",
+                        "text": "exact text to find in response"  // NEVER leave this empty
                       }}
                     ],
                     "extractions": [
@@ -276,12 +274,12 @@ class GeminiClient:
                 # Extract JSON content from response
                 response_text = response.text
                 
-                # Find JSON content - it might be wrapped in code blocks
+                # Find JSON content
                 json_match = re.search(r'``````', response_text, re.DOTALL)
                 if json_match:
                     json_str = json_match.group(1)
                 else:
-                    # Try to find any content in code blocks
+                    # Try other code block formats
                     code_match = re.search(r'``````', response_text, re.DOTALL)
                     if code_match:
                         json_str = code_match.group(1)
@@ -289,34 +287,90 @@ class GeminiClient:
                         # Just use the whole response
                         json_str = response_text
                 
-                # Try to clean the JSON string
-                json_str = re.sub(r'^[^{]*', '', json_str)  # Remove anything before the first {
-                json_str = re.sub(r'[^}]*$', '', json_str)  # Remove anything after the last }
+                # Clean the JSON string
+                json_str = re.sub(r'^[^{]*', '', json_str)  # Remove anything before first {
+                json_str = re.sub(r'[^}]*$', '', json_str)  # Remove anything after last }
                 
                 test_plan = json.loads(json_str)
+                
+                # Post-process test plan to ensure valid validations
+                self._validate_and_fix_test_plan(test_plan, instructions)
+                
                 return test_plan
             
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse JSON from Gemini response: {e}")
                 logger.error(f"Response: {response.text}")
                 
-                # Fallback: create a simple sequential plan
-                steps = []
-                for i, cmd in enumerate(parsed_commands):
-                    steps.append({
-                        "name": f"Execute command {i+1}",
-                        "prompt": instructions if instructions else f"Execute command {i+1}",
-                        "command_index": i,
-                        "modifications": {},
-                        "validation": [{"type": "status_code", "expected": 200}],
-                        "extractions": []
-                    })
-                
-                return {"test_plan": {"steps": steps}}
+                # Create fallback plan with manual extraction from instructions
+                return self._create_fallback_plan(parsed_commands, instructions)
         
         except Exception as e:
             logger.error(f"Error in Gemini processing: {e}")
             raise
+    
+    def _validate_and_fix_test_plan(self, test_plan: Dict[str, Any], instructions: str) -> None:
+        """Validate and fix the test plan to ensure it has proper validations."""
+        if 'test_plan' in test_plan and 'steps' in test_plan['test_plan']:
+            for step in test_plan['test_plan']['steps']:
+                if 'validation' in step:
+                    for validation in step['validation']:
+                        if validation.get('type') == 'contains':
+                            # Fix empty text in contains validation
+                            if 'text' not in validation or not validation['text']:
+                                # Extract text from instructions or prompt
+                                extracted_text = self._extract_validation_text(instructions, step.get('prompt', ''))
+                                validation['text'] = extracted_text
+    
+    def _extract_validation_text(self, instructions: str, prompt: str) -> str:
+        """Extract validation text from instructions or prompt."""
+        # First try to find quoted strings
+        for source in [instructions, prompt]:
+            if source:
+                # Look for "key": "value" pattern
+                kv_match = re.search(r'"([^"]+)":\s*"([^"]+)"', source)
+                if kv_match:
+                    return f'"{kv_match.group(1)}": "{kv_match.group(2)}"'
+                
+                # Look for any quoted string
+                quoted = re.findall(r'"([^"]*)"', source)
+                if quoted:
+                    return quoted[0]
+        
+        # Fallback to words after 'assert' or 'contain'
+        for keyword in ['assert', 'contain', 'check']:
+            if keyword in instructions.lower():
+                parts = instructions.lower().split(keyword, 1)
+                if len(parts) > 1:
+                    return parts[1].strip()
+        
+        # Last resort
+        return "content"
+    
+    def _create_fallback_plan(self, parsed_commands: List[Dict[str, Any]], instructions: str) -> Dict[str, Any]:
+        """Create a fallback test plan when Gemini fails."""
+        steps = []
+        for i, cmd in enumerate(parsed_commands):
+            validation = [{"type": "status_code", "expected": 200}]
+            
+            # Try to extract validation criteria from instructions
+            if instructions and ("assert" in instructions.lower() or "contain" in instructions.lower()):
+                validation_text = self._extract_validation_text(instructions, "")
+                validation.append({
+                    "type": "contains",
+                    "text": validation_text
+                })
+            
+            steps.append({
+                "name": f"Execute API and validate response",
+                "prompt": instructions if instructions else f"Execute command and validate response",
+                "command_index": i,
+                "modifications": {},
+                "validation": validation,
+                "extractions": []
+            })
+        
+        return {"test_plan": {"steps": steps}}
 
 
 class APITester:
@@ -330,27 +384,19 @@ class APITester:
         self.logs = []
     
     def execute_test_plan(self, test_plan: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute a test plan.
-        
-        Args:
-            test_plan: Test plan from Gemini
-        
-        Returns:
-            Test results
-        """
+        """Execute a test plan."""
         steps = test_plan.get('steps', [])
         results = []
         
-        # Add timing information
+        # Start timing execution
         start_time = time.time()
+        
+        # Track pass/fail metrics
+        passed = 0
+        failed = 0
         
         self.log("Starting test execution")
         self.log(f"Total steps: {len(steps)}")
-        
-        # Track passing and failing tests
-        passed = 0
-        failed = 0
         
         for i, step in enumerate(steps):
             self.log(f"\nExecuting step {i+1}: {step.get('name', f'Step {i+1}')}")
@@ -363,7 +409,7 @@ class APITester:
                 
                 base_command = self.commands[command_index].copy()
                 
-                # Get the original prompt/assertion
+                # Get the prompt (if available)
                 prompt = step.get('prompt', 'No prompt specified')
                 
                 # Apply modifications
@@ -632,10 +678,16 @@ class APITester:
                 
                 elif validation_type == 'contains':
                     text = validation.get('text', '')
-                    response_body = response.text
-                    success = text in response_body
-                    actual = response_body[:50] + "..." if len(response_body) > 50 else response_body
-                    message = f"Expected to find '{text}' in response"
+                    if not text:
+                        # Empty text is invalid for contains validation
+                        success = False
+                        message = "Empty text specified for 'contains' validation"
+                        actual = "N/A"
+                    else:
+                        response_body = response.text
+                        success = text in response_body
+                        actual = response_body[:50] + "..." if len(response_body) > 50 else response_body
+                        message = f"Expected to find '{text}' in response"
                 
                 elif validation_type == 'header':
                     header_name = validation.get('name', '')
