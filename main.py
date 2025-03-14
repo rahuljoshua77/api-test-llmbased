@@ -166,7 +166,7 @@ class GeminiClient:
     def __init__(self, api_key: str):
         """Initialize with API key."""
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.0-flash-exp')
     
     def process_instructions(self, parsed_commands: List[Dict[str, Any]], 
                              instructions: str, 
