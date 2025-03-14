@@ -366,16 +366,11 @@
             font-size: 14px;
         }
         
-        .validations-list {
-            margin-top: 10px;
-            padding-left: 20px;
-        }
-        
         .validation-item {
-            margin-bottom: 5px;
-            padding: 5px;
-            border-radius: 4px;
+            margin-top: 10px;
+            padding: 10px;
             background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
         }
         
         .validation-item.success {
@@ -511,9 +506,9 @@
                     <h2>Test Configuration</h2>
                     
                     <div class="tabs">
-                        <div class="tab active" data-tab="curl">CURL Commands</div>
-                        <div class="tab" data-tab="instructions">AI Instructions</div>
-                        <div class="tab" data-tab="settings">Settings</div>
+                        <div class="tab active" id="curl-tab-btn">CURL Commands</div>
+                        <div class="tab" id="instructions-tab-btn">AI Instructions</div>
+                        <div class="tab" id="settings-tab-btn">Settings</div>
                     </div>
                     
                     <div class="tab-content active" id="curl-tab">
@@ -578,8 +573,8 @@
                 <div class="card">
                     <h2>Test Results</h2>
                     <div class="tabs">
-                        <div class="tab active" data-tab="results">Results</div>
-                        <div class="tab" data-tab="logs">Logs</div>
+                        <div class="tab active" id="results-tab-btn">Results</div>
+                        <div class="tab" id="logs-tab-btn">Logs</div>
                     </div>
                     
                     <div class="tab-content active" id="results-tab">
@@ -612,40 +607,79 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Tab switching functionality
-            const tabs = document.querySelectorAll('.tab');
-            tabs.forEach(tab => {
+            console.log("DOM fully loaded - initializing event handlers");
+            
+            // Tab switching functionality (fixed version)
+            const configTabs = document.querySelectorAll('.tabs .tab');
+            
+            // Debug
+            console.log("Found tabs:", configTabs.length);
+            
+            configTabs.forEach(tab => {
                 tab.addEventListener('click', function() {
-                    // Find all tabs in the same tab group
-                    const tabsContainer = this.closest('.tabs');
-                    const siblingTabs = tabsContainer.querySelectorAll('.tab');
+                    console.log("Tab clicked:", this.id);
                     
-                    // Remove active class from sibling tabs
-                    siblingTabs.forEach(t => t.classList.remove('active'));
+                    // Find all tabs in the same container
+                    const tabsContainer = this.closest('.tabs');
+                    const tabButtons = tabsContainer.querySelectorAll('.tab');
+                    
+                    // Remove active class from all sibling tabs
+                    tabButtons.forEach(t => {
+                        t.classList.remove('active');
+                    });
                     
                     // Add active class to clicked tab
                     this.classList.add('active');
                     
-                    // Show corresponding tab content
-                    const tabName = this.getAttribute('data-tab');
+                    // Determine which tab content to show based on the id
+                    let tabContentId;
+                    if (this.id === 'curl-tab-btn') {
+                        tabContentId = 'curl-tab';
+                    } else if (this.id === 'instructions-tab-btn') {
+                        tabContentId = 'instructions-tab';
+                    } else if (this.id === 'settings-tab-btn') {
+                        tabContentId = 'settings-tab';
+                    } else if (this.id === 'results-tab-btn') {
+                        tabContentId = 'results-tab';
+                    } else if (this.id === 'logs-tab-btn') {
+                        tabContentId = 'logs-tab';
+                    }
                     
-                    // Find the tab content container (parent of all tab contents)
-                    const card = tabsContainer.closest('.card');
-                    const tabContents = card.querySelectorAll('.tab-content');
+                    if (!tabContentId) {
+                        console.error("Could not determine tab content ID");
+                        return;
+                    }
+                    
+                    // Find the parent card containing all tab contents
+                    const cardElement = this.closest('.card');
                     
                     // Hide all tab contents
+                    const tabContents = cardElement.querySelectorAll('.tab-content');
                     tabContents.forEach(content => {
                         content.classList.remove('active');
                     });
                     
                     // Show the selected tab content
-                    card.querySelector(`#${tabName}-tab`).classList.add('active');
+                    const targetContent = document.getElementById(tabContentId);
+                    if (targetContent) {
+                        targetContent.classList.add('active');
+                    } else {
+                        console.error("Could not find tab content:", tabContentId);
+                    }
                 });
             });
             
             // Run test button functionality
             const runButton = document.getElementById('run-test');
-            runButton.addEventListener('click', runTests);
+            if (runButton) {
+                console.log("Run test button found");
+                runButton.addEventListener('click', function() {
+                    console.log("Run Test button clicked");
+                    runTests();
+                });
+            } else {
+                console.error("Run test button not found!");
+            }
             
             // Function to run tests
             function runTests() {
@@ -766,44 +800,60 @@
                     const statusClass = step.success ? 'success' : 'error';
                     const statusText = step.success ? 'Passed' : 'Failed';
                     
-                    // Step header
-                    stepElement.innerHTML = `
-                        <div class="step-header">
-                            <div class="step-title">Step ${index + 1}: ${step.name}</div>
-                            <div class="step-status">
-                                <span class="status-dot ${statusClass}"></span>
-                                ${statusText}
-                            </div>
+                    // Create step header
+                    const headerDiv = document.createElement('div');
+                    headerDiv.className = 'step-header';
+                    headerDiv.innerHTML = `
+                        <div class="step-title">Step ${index + 1}: ${step.name}</div>
+                        <div class="step-status">
+                            <span class="status-dot ${statusClass}"></span>
+                            ${statusText}
                         </div>
                     `;
+                    stepElement.appendChild(headerDiv);
                     
                     // Add prompt if available
                     if (step.prompt) {
-                        const promptElement = document.createElement('div');
-                        promptElement.className = 'step-prompt';
-                        promptElement.innerHTML = `
+                        const promptDiv = document.createElement('div');
+                        promptDiv.className = 'step-prompt';
+                        promptDiv.innerHTML = `
                             <div class="prompt-label">Prompt/Assertion:</div>
                             <div class="prompt-content">${step.prompt}</div>
                         `;
-                        stepElement.appendChild(promptElement);
+                        stepElement.appendChild(promptDiv);
                     }
                     
                     // Add request/response details
-                    const contentElement = document.createElement('div');
-                    contentElement.className = 'step-content';
-                    contentElement.innerHTML = `
+                    const contentDiv = document.createElement('div');
+                    contentDiv.className = 'step-content';
+                    contentDiv.innerHTML = `
                         <div><strong>Request:</strong> ${step.request}</div>
                         <div><strong>Response:</strong> ${step.response}</div>
+                        ${step.notes ? `<div><strong>Notes:</strong> ${step.notes}</div>` : ''}
                     `;
                     
                     // Add validations if available
                     if (step.validations && step.validations.length > 0) {
-                        const validationsElement = document.createElement('div');
-                        validationsElement.innerHTML = '<strong>Validations:</strong>';
-                        
-                        const validationsList = document.createElement('div');
-                        validationsList.className = 'validations-list';
+                        const validationsDiv = document.createElement('div');
+                        validationsDiv.innerHTML = '<div><strong>Validations:</strong></div>';
                         
                         step.validations.forEach(validation => {
                             const validationItem = document.createElement('div');
-                            validationItem.className = `validation-item
+                            validationItem.className = `validation-item ${validation.success ? 'success' : 'error'}`;
+                            validationItem.innerHTML = `
+                                <div><strong>${validation.type}</strong>: ${validation.message}</div>
+                            `;
+                            validationsDiv.appendChild(validationItem);
+                        });
+                        
+                        contentDiv.appendChild(validationsDiv);
+                    }
+                    
+                    stepElement.appendChild(contentDiv);
+                    stepsContainer.appendChild(stepElement);
+                });
+            }
+        });
+    </script>
+</body>
+</html>
