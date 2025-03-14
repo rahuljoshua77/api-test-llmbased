@@ -266,6 +266,15 @@
             padding: 15px;
             margin-bottom: 15px;
             border: 1px solid var(--border-color);
+            border-left: 4px solid transparent;
+        }
+        
+        .step.step-success {
+            border-left-color: var(--success-color);
+        }
+        
+        .step.step-error {
+            border-left-color: var(--error-color);
         }
         
         .step-header {
@@ -286,6 +295,74 @@
         }
         
         .step-content {
+            font-size: 14px;
+        }
+        
+        .step-prompt {
+            background-color: rgba(31, 111, 235, 0.1);
+            border-radius: 4px;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        
+        .prompt-label {
+            font-weight: 600;
+            color: var(--accent-light);
+            margin-bottom: 5px;
+        }
+        
+        .prompt-content {
+            line-height: 1.5;
+        }
+        
+        .summary {
+            background-color: var(--secondary-bg);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .summary-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .summary-stats {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .stat {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .stat.passed {
+            background-color: rgba(63, 185, 80, 0.2);
+            color: var(--success-color);
+        }
+        
+        .stat.failed {
+            background-color: rgba(248, 81, 73, 0.2);
+            color: var(--error-color);
+        }
+        
+        .stat.total {
+            background-color: rgba(56, 139, 253, 0.2);
+            color: var(--accent-light);
+        }
+        
+        .summary-time {
+            margin-top: 5px;
+            color: var(--text-secondary);
             font-size: 14px;
         }
         
@@ -641,14 +718,35 @@
                 // Add overall log
                 logOutput.textContent += '\n' + data.logs.join('\n');
                 
+                // Add summary section if available
+                if (data.summary) {
+                    const summaryElement = document.createElement('div');
+                    summaryElement.className = 'summary';
+                    summaryElement.innerHTML = `
+                        <div class="summary-header">
+                            <h3>Test Summary</h3>
+                            <div class="summary-stats">
+                                <span class="stat passed">Passed: ${data.summary.passed}</span>
+                                <span class="stat failed">Failed: ${data.summary.failed}</span>
+                                <span class="stat total">Total: ${data.summary.total}</span>
+                            </div>
+                        </div>
+                        <div class="summary-time">
+                            <span>⏱️ Execution Time: ${data.summary.execution_time}</span>
+                        </div>
+                    `;
+                    stepsContainer.appendChild(summaryElement);
+                }
+                
                 // Create steps
                 data.steps.forEach((step, index) => {
                     const stepElement = document.createElement('div');
-                    stepElement.className = 'step';
+                    stepElement.className = `step ${step.success ? 'step-success' : 'step-error'}`;
                     
                     const statusClass = step.success ? 'success' : 'error';
                     const statusText = step.success ? 'Passed' : 'Failed';
                     
+                    // Step header
                     stepElement.innerHTML = `
                         <div class="step-header">
                             <div class="step-title">Step ${index + 1}: ${step.name}</div>
@@ -657,12 +755,28 @@
                                 ${statusText}
                             </div>
                         </div>
-                        <div class="step-content">
-                            <div><strong>Request:</strong> ${step.request}</div>
-                            <div><strong>Response:</strong> ${step.response}</div>
-                            ${step.notes ? `<div><strong>Notes:</strong> ${step.notes}</div>` : ''}
-                        </div>
                     `;
+                    
+                    // Add prompt if available
+                    if (step.prompt) {
+                        const promptElement = document.createElement('div');
+                        promptElement.className = 'step-prompt';
+                        promptElement.innerHTML = `
+                            <div class="prompt-label">Prompt/Assertion:</div>
+                            <div class="prompt-content">${step.prompt}</div>
+                        `;
+                        stepElement.appendChild(promptElement);
+                    }
+                    
+                    // Add request/response details
+                    const contentElement = document.createElement('div');
+                    contentElement.className = 'step-content';
+                    contentElement.innerHTML = `
+                        <div><strong>Request:</strong> ${step.request}</div>
+                        <div><strong>Response:</strong> ${step.response}</div>
+                        ${step.notes ? `<div><strong>Notes:</strong> ${step.notes}</div>` : ''}
+                    `;
+                    stepElement.appendChild(contentElement);
                     
                     stepsContainer.appendChild(stepElement);
                 });
