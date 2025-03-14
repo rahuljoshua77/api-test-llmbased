@@ -366,6 +366,26 @@
             font-size: 14px;
         }
         
+        .validations-list {
+            margin-top: 10px;
+            padding-left: 20px;
+        }
+        
+        .validation-item {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-radius: 4px;
+            background-color: rgba(0, 0, 0, 0.2);
+        }
+        
+        .validation-item.success {
+            border-left: 3px solid var(--success-color);
+        }
+        
+        .validation-item.error {
+            border-left: 3px solid var(--error-color);
+        }
+        
         footer {
             text-align: center;
             margin-top: 50px;
@@ -774,14 +794,16 @@
                     contentElement.innerHTML = `
                         <div><strong>Request:</strong> ${step.request}</div>
                         <div><strong>Response:</strong> ${step.response}</div>
-                        ${step.notes ? `<div><strong>Notes:</strong> ${step.notes}</div>` : ''}
                     `;
-                    stepElement.appendChild(contentElement);
                     
-                    stepsContainer.appendChild(stepElement);
-                });
-            }
-        });
-    </script>
-</body>
-</html>
+                    // Add validations if available
+                    if (step.validations && step.validations.length > 0) {
+                        const validationsElement = document.createElement('div');
+                        validationsElement.innerHTML = '<strong>Validations:</strong>';
+                        
+                        const validationsList = document.createElement('div');
+                        validationsList.className = 'validations-list';
+                        
+                        step.validations.forEach(validation => {
+                            const validationItem = document.createElement('div');
+                            validationItem.className = `validation-item
