@@ -6,6 +6,7 @@ import logging
 from typing import List, Dict, Any
 import google.generativeai as genai
 import os
+import time
 
 app = Flask(__name__)
 
@@ -236,6 +237,7 @@ class GeminiClient:
                 "steps": [
                   {{
                     "name": "Step name",
+                    "prompt": "Original assertion being tested",
                     "command_index": 0,  // index in the provided commands list
                     "modifications": {{
                       "headers": {{}},  // headers to add/replace
@@ -303,6 +305,7 @@ class GeminiClient:
                 for i, cmd in enumerate(parsed_commands):
                     steps.append({
                         "name": f"Execute command {i+1}",
+                        "prompt": instructions if instructions else f"Execute command {i+1}",
                         "command_index": i,
                         "modifications": {},
                         "validation": [{"type": "status_code", "expected": 200}],
@@ -339,8 +342,15 @@ class APITester:
         steps = test_plan.get('steps', [])
         results = []
         
+        # Add timing information
+        start_time = time.time()
+        
         self.log("Starting test execution")
         self.log(f"Total steps: {len(steps)}")
+        
+        # Track passing and failing tests
+        passed = 0
+        failed = 0
         
         for i, step in enumerate(steps):
             self.log(f"\nExecuting step {i+1}: {step.get('name', f'Step {i+1}')}")
@@ -352,6 +362,9 @@ class APITester:
                     raise ValueError(f"Command index {command_index} out of range")
                 
                 base_command = self.commands[command_index].copy()
+                
+                # Get the original prompt/assertion
+                prompt = step.get('prompt', 'No prompt specified')
                 
                 # Apply modifications
                 modified_command = self.apply_modifications(
@@ -380,8 +393,16 @@ class APITester:
                 
                 # Add to results
                 success = all(result.get('success', False) for result in validation_results)
+                
+                # Update counters
+                if success:
+                    passed += 1
+                else:
+                    failed += 1
+                
                 result_step = {
                     "name": step.get('name', f"Step {i+1}"),
+                    "prompt": prompt,
                     "success": success,
                     "request": request_info,
                     "response": response_info,
@@ -398,8 +419,10 @@ class APITester:
             
             except Exception as e:
                 self.log(f"Error executing step {i+1}: {str(e)}")
+                failed += 1
                 results.append({
                     "name": step.get('name', f"Step {i+1}"),
+                    "prompt": step.get('prompt', 'No prompt specified'),
                     "success": False,
                     "request": "Error: " + str(e),
                     "response": "N/A",
@@ -407,9 +430,19 @@ class APITester:
                 })
                 break
         
+        # Calculate execution time
+        end_time = time.time()
+        execution_time = end_time - start_time
+        
         return {
             "steps": results,
-            "logs": self.logs
+            "logs": self.logs,
+            "summary": {
+                "total": len(steps),
+                "passed": passed,
+                "failed": failed,
+                "execution_time": f"{execution_time:.2f} seconds"
+            }
         }
     
     def apply_modifications(self, command: Dict[str, Any], modifications: Dict[str, Any]) -> Dict[str, Any]:
